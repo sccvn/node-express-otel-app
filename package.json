@@ -13,6 +13,18 @@
     "schema": "src/prisma/schema.prisma"
   },
   "dependencies": {
+    "@opentelemetry/api": "^1.8.0",
+    "@opentelemetry/sdk-node": "^0.51.0",
+    "@opentelemetry/auto-instrumentations-node": "^0.44.0",
+    "@opentelemetry/exporter-otlp-http": "^0.26.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.51.0",
+    "@opentelemetry/exporter-metrics-otlp-http": "^0.51.0",
+    "@opentelemetry/instrumentation-winston": "^0.35.0",
+    "@opentelemetry/resources": "^1.24.0",
+    "@opentelemetry/semantic-conventions": "^1.24.0",
+    "@opentelemetry/sdk-metrics": "^1.24.0",
+    "@opentelemetry/sdk-trace-base": "^1.24.0",
+    "winston": "^3.11.0",
     "@ngneat/falso": "^7.1.1",
     "@prisma/client": "^4.16.1",
     "axios": "^1.0.0",
@@ -23,7 +35,17 @@
     "express-jwt": "^8.4.1",
     "jsonwebtoken": "^9.0.2",
     "slugify": "^1.6.0",
-    "tslib": "^2.3.0"
+    "tslib": "^2.3.0",
+    "express-session": "^1.18.1",
+    "passport": "^0.4.1",
+    "passport-jwt": "^4.0.0",
+    "passport-local": "^1.0.0",
+    "errorhandler": "^1.5.0",
+    "compression": "^1.7.4",
+    "helmet": "^5.0.2",
+    "mongoose": "^8.5.2",
+    "mongoose-unique-validator": "^5.0.1",
+    "slug": "^9.0.0"
   },
   "devDependencies": {
     "@nx/esbuild": "17.2.6",

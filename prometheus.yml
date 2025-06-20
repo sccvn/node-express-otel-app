@@ -1,0 +1,153 @@
+global:
+  scrape_interval: 15s          # Default scrape interval
+  evaluation_interval: 15s      # Rule evaluation interval
+  external_labels:
+    cluster: 'realworld-local'
+    environment: 'development'
+
+# Rule files for alerting
+rule_files:
+  - "realworld_rules.yml"
+  - "infrastructure_rules.yml"
+
+# Alerting configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+      timeout: 10s
+      path_prefix: /
+
+# Scrape configurations for different services
+scrape_configs:
+  # RealWorld API Application
+  - job_name: 'realworld-api'
+    static_configs:
+      - targets: ['realworld-api:3000']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    honor_labels: true
+    params:
+      format: ['prometheus']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'realworld-api'
+      - source_labels: [__address__]
+        target_label: service
+        replacement: 'realworld-api'
+    metric_relabel_configs:
+      # Add service label to all metrics
+      - target_label: service
+        replacement: 'realworld-api'
+      # Rename OpenTelemetry metrics for better organization
+      - source_labels: [__name__]
+        regex: 'otel_(.*)'
+        target_label: __name__
+        replacement: 'realworld_${1}'
+
+  # OpenTelemetry Collector Metrics
+  - job_name: 'otel-collector'
+    static_configs:
+      - targets: ['otel-collector:8889']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'otel-collector'
+      - source_labels: [__address__]
+        target_label: service
+        replacement: 'otel-collector'
+    metric_relabel_configs:
+      # Organize collector metrics
+      - source_labels: [__name__]
+        regex: 'otelcol_(.*)'
+        target_label: __name__
+        replacement: 'collector_${1}'
+
+  # MongoDB Metrics (requires mongodb_exporter)
+  - job_name: 'mongodb'
+    static_configs:
+      - targets: ['mongo-exporter:9216']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 15s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'mongodb'
+      - source_labels: [__address__]
+        target_label: service
+        replacement: 'mongodb'
+
+  # Jaeger Metrics
+  - job_name: 'jaeger'
+    static_configs:
+      - targets: ['jaeger:14269']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'jaeger'
+      - source_labels: [__address__]
+        target_label: service
+        replacement: 'jaeger'
+
+  # Prometheus Self-Monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'prometheus'
+      - source_labels: [__address__]
+        target_label: service
+        replacement: 'prometheus'
+
+  # Grafana Metrics
+  - job_name: 'grafana'
+    static_configs:
+      - targets: ['grafana:3000']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'grafana'
+      - source_labels: [__address__]
+        target_label: service
+        replacement: 'grafana'
+
+  # Docker Container Metrics (requires cAdvisor)
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'cadvisor'
+      - source_labels: [__address__]
+        target_label: service
+        replacement: 'cadvisor'
+    metric_relabel_configs:
+      # Filter out noisy container metrics
+      - source_labels: [__name__]
+        regex: 'container_.*'
+        target_label: __tmp_container_metric
+        replacement: 'true'
+      - source_labels: [container_label_com_docker_compose_service]
+        target_label: service
+        regex: '^(realworld-api|mongo|otel-collector|jaeger|prometheus|grafana)$''

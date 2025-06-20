@@ -1,0 +1,383 @@
+# OpenTelemetry Collector Configuration for RealWorld API
+# Production-ready setup with comprehensive processors and exporters
+
+# Extensions provide additional capabilities
+extensions:
+  # Health check extension
+  health_check:
+    endpoint: 0.0.0.0:13133
+    path: "/health"
+    check_collector_pipeline:
+      enabled: true
+      interval: "5m"
+      exporter_failure_threshold: 5
+
+  # Performance profiling
+  pprof:
+    endpoint: 0.0.0.0:1777
+    block_profile_fraction: 0
+    mutex_profile_fraction: 0
+
+  # zPages for debugging
+  zpages:
+    endpoint: 0.0.0.0:55679
+
+  # Memory ballast for stability
+  memory_ballast:
+    size_mib: 128
+
+# Receivers collect telemetry data
+receivers:
+  # OTLP receiver for OpenTelemetry Protocol
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+        max_recv_msg_size: 4194304  # 4MB
+        max_concurrent_streams: 100
+        read_buffer_size: 65536
+        write_buffer_size: 65536
+        keepalive:
+          server_parameters:
+            max_connection_idle: 11s
+            max_connection_age: 12s
+            max_connection_age_grace: 13s
+            time: 30s
+            timeout: 5s
+          enforcement_policy:
+            min_time: 10s
+            permit_without_stream: true
+
+      http:
+        endpoint: 0.0.0.0:4318
+        max_request_body_size: 4194304  # 4MB
+        include_metadata: true
+        cors:
+          allowed_origins:
+            - "http://localhost:3000"
+            - "http://localhost:4200"
+            - "https://*.example.com"
+          allowed_headers:
+            - "*"
+          max_age: 7200
+
+  # Prometheus receiver for scraping metrics
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: 'collector-self'
+          scrape_interval: 30s
+          static_configs:
+            - targets: ['localhost:8889']
+
+  # Host metrics receiver (optional)
+  hostmetrics:
+    collection_interval: 30s
+    scrapers:
+      cpu:
+        metrics:
+          system.cpu.utilization:
+            enabled: true
+      memory:
+        metrics:
+          system.memory.utilization:
+            enabled: true
+      load:
+      disk:
+        include:
+          match_type: regexp
+          devices: ["^/dev/.*"]
+        exclude:
+          match_type: regexp
+          devices: ["^/dev/loop.*"]
+      filesystem:
+        include_devices:
+          match_type: regexp
+          devices: ["^/dev/.*"]
+        exclude_mount_points:
+          match_type: regexp
+          mount_points: ["^/dev/.*", "^/proc/.*", "^/sys/.*", "^/var/lib/docker/.*"]
+      network:
+      processes:
+
+# Processors transform telemetry data
+processors:
+  # Memory limiter prevents OOM
+  memory_limiter:
+    limit_mib: 512
+    spike_limit_mib: 128
+    check_interval: 5s
+
+  # Batch processor for performance
+  batch:
+    timeout: 1s
+    send_batch_size: 1024
+    send_batch_max_size: 2048
+
+  # Resource processor adds metadata
+  resource:
+    attributes:
+      - key: service.instance.id
+        value: ${env:HOSTNAME}
+        action: upsert
+      - key: deployment.environment
+        value: ${env:ENVIRONMENT}
+        action: upsert
+      - key: service.namespace
+        value: "realworld"
+        action: upsert
+      - key: k8s.cluster.name
+        value: ${env:K8S_CLUSTER_NAME}
+        action: upsert
+      - key: cloud.provider
+        value: ${env:CLOUD_PROVIDER}
+        action: upsert
+      - key: cloud.region
+        value: ${env:CLOUD_REGION}
+        action: upsert
+
+  # Attributes processor for data enrichment
+  attributes:
+    actions:
+      # Normalize HTTP status codes
+      - key: http.status_class
+        action: insert
+        from_attribute: http.status_code
+        value: "%{http.status_code}"
+      # Add business context
+      - key: business.domain
+        value: "content_platform"
+        action: upsert
+      # Sanitize sensitive data
+      - key: http.request.header.authorization
+        action: delete
+      - key: http.request.header.cookie
+        action: delete
+
+  # Transform processor for advanced data manipulation
+  transform:
+    trace_statements:
+      - context: span
+        statements:
+          # Add custom span attributes based on existing data
+          - set(attributes["custom.span.duration_category"], "fast") where duration < 100000000  # 100ms in nanoseconds
+          - set(attributes["custom.span.duration_category"], "medium") where duration >= 100000000 and duration < 1000000000  # 100ms-1s
+          - set(attributes["custom.span.duration_category"], "slow") where duration >= 1000000000  # >1s
+          # Classify operations
+          - set(attributes["custom.operation.type"], "read") where attributes["db.operation"] == "find" or attributes["db.operation"] == "findOne"
+          - set(attributes["custom.operation.type"], "write") where attributes["db.operation"] == "create" or attributes["db.operation"] == "update" or attributes["db.operation"] == "delete"
+    metric_statements:
+      - context: metric
+        statements:
+          # Add metric metadata
+          - set(description, "Custom business metric") where name == "user_operations_total"
+
+  # Filter processor to reduce noise
+  filter:
+    traces:
+      span:
+        # Filter out health check traces
+        - 'attributes["http.route"] == "/health"'
+        - 'attributes["http.route"] == "/metrics"'
+        # Filter out very fast operations (potential noise)
+        - 'duration < 1000000'  # Less than 1ms
+    metrics:
+      metric:
+        # Filter out noisy metrics
+        - 'name == "process_runtime_nodejs_heap_space_size_available_bytes"'
+        - 'name == "process_runtime_nodejs_heap_space_size_used_bytes"'
+    logs:
+      log_record:
+        # Filter debug logs in production
+        - 'severity_text == "DEBUG" and resource.attributes["deployment.environment"] == "production"'
+
+  # Tail sampling processor for intelligent sampling
+  tail_sampling:
+    decision_wait: 10s
+    num_traces: 50000
+    expected_new_traces_per_sec: 100
+    policies:
+      # Always sample errors
+      - name: error_policy
+        type: status_code
+        status_code:
+          status_codes: [ERROR]
+      # Always sample slow requests
+      - name: latency_policy
+        type: latency
+        latency:
+          threshold_ms: 1000
+      # Sample based on service
+      - name: service_policy
+        type: string_attribute
+        string_attribute:
+          key: service.name
+          values: ["realworld-api"]
+          fraction: 0.1  # 10% sampling
+      # Probabilistic sampling fallback
+      - name: probabilistic_policy
+        type: probabilistic
+        probabilistic:
+          sampling_percentage: 1  # 1% for everything else
+
+  # Span processor for span manipulation
+  span:
+    name:
+      # Normalize span names
+      to_attributes:
+        rules:
+          - pattern: ^(GET|POST|PUT|DELETE|PATCH|OPTIONS|HEAD) (.+)$
+            name_template: "${1} {normalized_path}"
+      from_attributes:
+        - key: http.method
+        - key: http.route
+
+# Exporters send telemetry data to backends
+exporters:
+  # Jaeger exporter for traces
+  jaeger:
+    endpoint: jaeger:14250
+    tls:
+      insecure: true
+    timeout: 30s
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 300s
+    sending_queue:
+      enabled: true
+      num_consumers: 10
+      queue_size: 5000
+
+  # Prometheus exporter for metrics
+  prometheus:
+    endpoint: "0.0.0.0:8889"
+    namespace: "realworld"
+    const_labels:
+      environment: ${env:ENVIRONMENT}
+      cluster: "realworld-local"
+    metric_expiration: 180m
+    enable_open_metrics: true
+    add_metric_suffixes: true
+    send_timestamps: true
+    resource_to_telemetry_conversion:
+      enabled: true
+
+  # OTLP HTTP exporter for external platforms
+  otlphttp:
+    endpoint: ${env:EXTERNAL_OTLP_ENDPOINT}
+    headers:
+      authorization: "Bearer ${env:EXTERNAL_API_KEY}"
+      x-environment: ${env:ENVIRONMENT}
+    timeout: 30s
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 300s
+    sending_queue:
+      enabled: true
+      num_consumers: 10
+      queue_size: 5000
+    compression: gzip
+
+  # Logging exporter for debugging
+  logging:
+    loglevel: info
+    sampling_initial: 2
+    sampling_thereafter: 500
+
+  # File exporter for backup/debugging
+  file:
+    path: /tmp/otel-collector-traces.json
+    rotation:
+      max_megabytes: 100
+      max_days: 7
+      max_backups: 10
+
+# Connectors link pipelines
+connectors:
+  # Span metrics connector creates metrics from trace data
+  spanmetrics:
+    histogram_buckets: [2ms, 6ms, 10ms, 100ms, 250ms, 500ms, 1000ms, 1400ms, 2000ms, 5s, 10s, 20s, 40s, 60s]
+    dimensions:
+      - name: http.method
+        default: GET
+      - name: http.status_code
+      - name: service.name
+    exclude_dimensions:
+      - status.code
+    aggregation_temporality: AGGREGATION_TEMPORALITY_CUMULATIVE
+    metrics_flush_interval: 30s
+
+# Service defines the telemetry pipelines
+service:
+  extensions: 
+    - health_check
+    - pprof
+    - zpages
+    - memory_ballast
+
+  pipelines:
+    # Traces pipeline
+    traces:
+      receivers: [otlp]
+      processors: 
+        - memory_limiter
+        - resource
+        - attributes
+        - transform
+        - filter
+        - tail_sampling
+        - span
+        - batch
+      exporters: [jaeger, otlphttp, logging]
+
+    # Metrics pipeline
+    metrics:
+      receivers: [otlp, prometheus, hostmetrics]
+      processors:
+        - memory_limiter
+        - resource
+        - attributes
+        - transform
+        - filter
+        - batch
+      exporters: [prometheus, otlphttp]
+
+    # Logs pipeline
+    logs:
+      receivers: [otlp]
+      processors:
+        - memory_limiter
+        - resource
+        - attributes
+        - filter
+        - batch
+      exporters: [logging, otlphttp]
+
+    # Span metrics pipeline (creates metrics from traces)
+    metrics/spanmetrics:
+      receivers: [spanmetrics]
+      processors: [batch]
+      exporters: [prometheus]
+
+  # Telemetry configuration for the collector itself
+  telemetry:
+    logs:
+      level: "info"
+      development: false
+      sampling:
+        enabled: true
+        tick: 10s
+        initial: 10
+        thereafter: 100
+      encoding: "json"
+    metrics:
+      level: "detailed"
+      address: "0.0.0.0:8888"
+    traces:
+      processors:
+        - batch:
+            timeout: 2s

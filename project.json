@@ -13,9 +13,16 @@
         "outputPath": "dist/api",
         "format": ["cjs"],
         "bundle": false,
-        "main": "src/main.ts",
+        "main": "src/server.js",
         "tsConfig": "tsconfig.app.json",
-        "assets": ["src/assets/**/**"],
+        "assets": [
+          "src/assets/**/**",
+          "src/app.js",
+          "src/telemetry/**",
+          "src/routes/**",
+          "src/models/**",
+          "src/config/**"
+        ],
         "generatePackageJson": true,
         "esbuildOptions": {
           "sourcemap": true,

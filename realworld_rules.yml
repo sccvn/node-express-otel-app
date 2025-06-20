@@ -1,0 +1,65 @@
+groups:
+  - name: realworld_api_alerts
+    interval: 30s
+    rules:
+      # High error rate alert
+      - alert: RealWorldHighErrorRate
+        expr: realworld:api_error_rate_5m > 0.05
+        for: 2m
+        labels:
+          severity: warning
+          service: realworld-api
+        annotations:
+          summary: "High error rate detected in RealWorld API"
+          description: "Error rate is {{ $value | humanizePercentage }} for the last 5 minutes"
+          runbook_url: "https://wiki.example.com/runbooks/high-error-rate"
+
+      # High response time alert
+      - alert: RealWorldHighResponseTime
+        expr: histogram_quantile(0.95, rate(api_request_duration_ms_bucket[5m])) > 1000
+        for: 5m
+        labels:
+          severity: warning
+          service: realworld-api
+        annotations:
+          summary: "High response time detected in RealWorld API"
+          description: "95th percentile response time is {{ $value }}ms for the last 5 minutes"
+          runbook_url: "https://wiki.example.com/runbooks/high-response-time"
+
+      # Database connection failures
+      - alert: RealWorldDatabaseConnectionFailure
+        expr: realworld:db_operation_rate_5m{success="false"} > 0.01
+        for: 1m
+        labels:
+          severity: critical
+          service: realworld-api
+        annotations:
+          summary: "Database connection failures detected"
+          description: "Database operations are failing at {{ $value }} per second"
+          runbook_url: "https://wiki.example.com/runbooks/database-failures"
+
+      # Service down alert
+      - alert: RealWorldServiceDown
+        expr: up{job="realworld-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: realworld-api
+        annotations:
+          summary: "RealWorld API service is down"
+          description: "The RealWorld API service has been down for more than 1 minute"
+          runbook_url: "https://wiki.example.com/runbooks/service-down"
+
+  - name: business_metrics_alerts
+    interval: 60s
+    rules:
+      # Unusual registration rate
+      - alert: RealWorldUnusualRegistrationRate
+        expr: realworld:user_registration_rate_1h > 10
+        for: 10m
+        labels:
+          severity: warning
+          category: business
+        annotations:
+          summary: "Unusual user registration rateThe implementation transforms the basic RealWorld application into an enterprise-grade, fully observable system that provides deep insights into both technical performance and business operations while maintaining production reliability and security standards."
+          description: "User registrations have exceeded 10 in the last hour"
