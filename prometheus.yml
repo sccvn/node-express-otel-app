@@ -150,4 +150,4 @@ scrape_configs:
         replacement: 'true'
       - source_labels: [container_label_com_docker_compose_service]
         target_label: service
-        regex: '^(realworld-api|mongo|otel-collector|jaeger|prometheus|grafana)$''
+        regex: '^(realworld-api|mongo|otel-collector|jaeger|prometheus|grafana)$'
